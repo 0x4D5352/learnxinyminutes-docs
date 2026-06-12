@@ -66,6 +66,10 @@ ls -l
 # │   2 │ world   │ file   │          │ false      │ rw-r--r--   │           1 │   1166959051 │ mussar   │ staff   │   0 B │ now      │ now       │ now       │
 # ╰─────┴─────────┴────────┴──────────┴────────────┴─────────────┴─────────────┴──────────────┴──────────┴─────────┴───────┴──────────┴───────────┴───────────╯
 
+# Much like other shells, Nushell allows you to create aliases for command replacement:
+
+alias ll = ls -l # now, calling 'll' will produce the same output as above
+
 # Any time a command can produce columnar output, the Nushell equivalent will
 # produce a table. If you want to use a command that has been replaced by a
 # Nushell built-in command, prefix it with a caret (^), which signifies that
@@ -118,11 +122,51 @@ ps | sort-by cpu
 # │ 1 │ 17817 │ 17814 │ Element Helper (Renderer) │ Running │ 5.29 │ 535.9 MB │   1.9 TB │
 # ╰───┴───────┴───────┴───────────────────────────┴─────────┴──────┴──────────┴──────────╯
 
+# You can access the values of specific rows and columns using cell-paths,
+# accesed via dot notation. Nu uses the special variable $in to reference the
+# output of the previous pipe:
+
+ps | sort-by cpu --reverse | where status == Running and cpu > 5 | $in.0.name
+# => nu
+
+# if a row/column might be null, you can specify it as an optional value using
+# the question mark (?) postfix operator, as in this contrived example:
+ps | sort-by cpu --reverse | where status == Running and cpu > 5 | first 1 | $in.1?.name
+# returns `null`; without the question mark the above would raise an error.
+
+# a more real-world example:
+http get https://api.restful-api.dev/objects | get data.Price
+# Error: nu::shell::column_not_found
+#
+#   × Cannot find column 'Price'
+#    ╭─[entry #4:1:10]
+#  1 │ http get https://api.restful-api.dev/objects | get data.Price
+#    ·          ─────────────────┬─────────────────            ──┬──
+#    ·                           │                               ╰── cannot find column 'Price'
+#    ·                           ╰── value originates here
+#    ╰────
+#
+http get https://api.restful-api.dev/objects | get data.Price?
+# ╭────┬────────╮
+# │  0 │        │
+# │  1 │        │
+# │  2 │        │
+# │  3 │        │
+# │  4 │        │
+# │  5 │        │
+# │  6 │        │
+# │  7 │        │
+# │  8 │        │
+# │  9 │        │
+# │ 10 │        │
+# │ 11 │ 419.99 │
+# │ 12 │ 519.99 │
+# ╰────┴────────╯
+
 # As a functional language, Nu supports all of the familiar functional programming
 # concepts. Let's perform a map operation on every item that appears in the table
 # shown above where we print the value for each corow using the 'each' command.
 # To use the 'each' command, you provide a command sequence wrapped in a closure ({})
-# Nu utilizes the special $in variable to reference the output of the previous pipe:
 ps | sort-by cpu --reverse | where status == Running and cpu > 5 | each { echo $in }
 # ╭───┬───────┬───────┬───────────────────────────┬─────────┬───────┬──────────┬──────────╮
 # │ # │  pid  │ ppid  │           name            │ status  │  cpu  │   mem    │ virtual  │
@@ -356,6 +400,41 @@ $"goodbye,\n($foo)"
 # => goodbye,
 # => world
 
+# Strings surrounded by backticks (`) are interpreted as if they were bare words
+# on the command line, but capture whitespace:
+
+touch `hello world` # creates a file 'hello world'
+rm 'hello world' # in some instances, the command won't require the backticks
+
+# Globs are similar to strings, but function as a tool for working with the
+# filesystem as you might expect from a shell language like Bash:
+
+ls *.nu
+# ╭───┬─────────────┬──────┬──────┬─────────────╮
+# │ # │    name     │ type │ size │  modified   │
+# ├───┼─────────────┼──────┼──────┼─────────────┤
+# │ 0 │ learn_nu.nu │ file │  0 B │ 7 hours ago │
+# ╰───┴─────────────┴──────┴──────┴─────────────╯
+
+# Globs only work as bare word strings or within backtick-quoted strings:
+
+ls '*.nu'
+# Error: nu::shell::error
+#
+#   × No matches found for DoNotExpand("*.nu")
+#    ╭─[entry #49:1:4]
+#  1 │ ls '*.nu'
+#    ·    ───┬──
+#    ·       ╰── Pattern, file or folder not found
+#    ╰────
+#   help: no matches found
+ls `*.nu`
+# ╭───┬─────────────┬──────┬──────┬─────────────╮
+# │ # │    name     │ type │ size │  modified   │
+# ├───┼─────────────┼──────┼──────┼─────────────┤
+# │ 0 │ learn_nu.nu │ file │  0 B │ 7 hours ago │
+# ╰───┴─────────────┴──────┴──────┴─────────────╯
+
 # For more information, see https://www.nushell.sh/book/working_with_strings.html
 
 # Lists are zero-indexed ordered sequences of zero or more values of any type:
@@ -440,6 +519,63 @@ $"goodbye,\n($foo)"
 6 not-in [1 2]  # => true
 [3 2] not-has 3 # => false
 
+# Ranges are sequences of numbers separated by two periods, with an optional
+# stride value that dictates the step distance from the start to the end:
+1..5
+# ╭───┬───╮
+# │ 0 │ 1 │
+# │ 1 │ 2 │
+# │ 2 │ 3 │
+# │ 3 │ 4 │
+# │ 4 │ 5 │
+# ╰───┴───╯
+2..4..10
+# ╭───┬────╮
+# │ 0 │  2 │
+# │ 1 │  4 │
+# │ 2 │  6 │
+# │ 3 │  8 │
+# │ 4 │ 10 │
+# ╰───┴────╯
+
+# Ranges can go backawards:
+5..1 
+# ╭───┬───╮
+# │ 0 │ 5 │
+# │ 1 │ 4 │
+# │ 2 │ 3 │
+# │ 3 │ 2 │
+# │ 4 │ 1 │
+# ╰───┴───╯
+
+# ... or negative:
+1..-4
+# ╭───┬────╮
+# │ 0 │  1 │
+# │ 1 │  0 │
+# │ 2 │ -1 │
+# │ 3 │ -2 │
+# │ 4 │ -3 │
+# │ 5 │ -4 │
+# ╰───┴────╯
+
+# ... and can even be floats!
+(1.0)..(1.2)..(2.0)
+# ╭───┬──────╮
+# │ 0 │ 1.00 │
+# │ 1 │ 1.20 │
+# │ 2 │ 1.40 │
+# │ 3 │ 1.60 │
+# │ 4 │ 1.80 │
+# │ 5 │ 2.00 │
+# ╰───┴──────╯
+
+# While they look like lists, ranges are a standalone data type and are lazily
+# evaluated. They are most often used near the beginning of a pipeline as an
+# input to an iterator, or as an argument to a slicing function:
+
+'hello' | str substring 1..3    # => ell
+
 # Records are key-value pairs that associate string keys with datatype values:
 {language: nushell began: 2019-08-23 is_cool: true}
 # ╭──────────┬─────────────╮
@@ -507,7 +643,41 @@ $"goodbye,\n($foo)"
 # │ 1 │ alice │  30 │
 # ╰───┴───────┴─────╯
 
-# Some data types and operators were not discussed here.
+# Cell-paths are data types like any other, except that they refer to an inner
+# value within a structured value like a list, record, or table:
+
+[{name: bob, age: 30}, {name: alice, age: 30}] | $in.name
+# ╭───┬───────╮
+# │ 0 │ bob   │
+# │ 1 │ alice │
+# ╰───┴───────╯
+[{name: bob, age: 30}, {name: alice, age: 30}] | $in.0
+# ╭──────┬─────╮
+# │ name │ bob │
+# │ age  │ 30  │
+# ╰──────┴─────╯
+
+# A cell-path can be stored as a variable and used later, using an optional
+# leading dollar sign:
+
+let idx = $.1
+[{name: bob, age: 30}, {name: alice, age: 30}] | get $idx
+# ╭──────┬───────╮
+# │ name │ alice │
+# │ age  │ 30    │
+# ╰──────┴───────╯
+
+# Anonymous functions, also referred to as lambdas, are closures in Nushell.
+# They can also be stored as a variable for use later in commands like filters:
+
+let greater_than_five = {|x| $x > 5}
+[0 2 4 6 8 10] | where $greater_than_five
+# ╭───┬────╮
+# │ 0 │  6 │
+# │ 1 │  8 │
+# │ 2 │ 10 │
+# ╰───┴────╯
+
 # See the full list of data types: https://www.nushell.sh/book/types_of_data.html
 # See the full list of operators: https://www.nushell.sh/book/operators.html
 
@@ -550,12 +720,35 @@ $y      # => 5
 # However, this is discouraged as Nu is designed to be a functional language,
 # and it is preferable to use idioms of the paradigm such as maps and filters to
 # operate upon variables. The result of a pipeline is always new data, allowing
-# the original data to stay intact.
+# the original data to stay intact. We will discuss 
 
 # Nushell does have a concept of constants, which exist to allow Nu scripts and
 # Nushell REPL users to safely evaluate variables that were defined as part of
 # the code as written; This is because Nushell behaves slightly differently from
 # other interpreted languages like Python or Bash.
+
+let this_file = 'learn_nu.nu';
+source $this_file
+# Error: nu::parser::error
+#
+#   × Error: nu::shell::not_a_constant
+#   │
+#   │   × Not a constant.
+#   │    ╭─[entry #7:1:8]
+#   │  1 │ source $this_file
+#   │    ·        ─────┬────
+#   │    ·             ╰── Value is not a parse-time constant
+#   │    ╰────
+#   │   help: Only a subset of expressions are allowed constants during parsing. Try using the 'const' command or typing the value literally.
+#   │
+#    ╭─[entry #7:1:8]
+#  1 │ source $this_file
+#    ·        ─────┬────
+#    ·             ╰── Encountered error during parse-time evaluation
+#    ╰────
+
+const this_file = './learn_nu.nu'
+source $this_file # loads the source code and runs it in the current env context
 
 # If you've ever run a bash script that half-completed before raising an error,
 # you know that certain classes of errors can only be caught at runtime due to
@@ -579,9 +772,177 @@ $y      # => 5
 # │ 2 │ 15 │ # 3 + 2 (5) * 3 = 15
 # ╰───┴────╯
 
+# Nu is a gradually typed language, similar to TypeScript. Variables are cast
+# to their datatype at assignment, and can be reassigned to new data types as
+# they can in Python. However, you can specify a type at declaration to ensure
+# type safety when sharing or working on larger projects.
 
+let number: int = 'foo'
+# Error: nu::parser::type_mismatch
+#
+#   × Type mismatch.
+#    ╭─[entry #16:1:19]
+#  1 │ let number: int = 'foo'
+#    ·                   ──┬──
+#    ·                     ╰── expected int, found string
+#    ╰────
 
+# Type declarations for variables are not common, but as we're about to see, they
+# can be quite useful when writing more complex logic.
+
+# For simple pipelines, aliasing the command within parentheses can often be enough:
+alias git-log-parse = (git log --oneline | parse '{hash} {commit}')
+git-log-parse # when run in a git repo like learnxinyminutes, shows results like:
+# ╭───┬──────────┬─────────────────────────────────────────────────────────────────────╮
+# │ # │   hash   │                               commit                                │
+# ├───┼──────────┼─────────────────────────────────────────────────────────────────────┤
+# │ 0 │ 97b60079 │ feat: add nu.md; coming from bash, data and ops, start of variables │
+# │ 1 │ 11a924e4 │ [lua/it] Traduzione italiana Lua translation (#5464)                │
+# │ 2 │ f87f00d1 │ [rink/en] Add Rink tool (#5297)                                     │
+# ╰───┴──────────┴─────────────────────────────────────────────────────────────────────╯
+
+# Howeer, if you require a more complex interaction, you can define your own
+# functions, which Nu refers to as custom commands:
+
+def greet [name] {
+    $"Hello, ($name)!"
+}
+
+greet Joshua        # => "Hello, Joshua!"
+
+# Custom commands, like all other expressions in Nu, implicitly return their
+# final value. You can explicitly return using the `return (value)` syntax, but
+# this is typically used as part of branching conditional logic, which we will
+# discuss in the next section.
+
+# Custom commands can work within pipelines, just like builtins and externs:
+greet Joshua | str downcase     # => 'hello, joshua!'
+
+def double [] { each {|num| 2 * $num } }; [1 2 3] | double
+# ╭───┬───╮
+# │ 0 │ 2 │
+# │ 1 │ 4 │
+# │ 2 │ 6 │
+# ╰───┴───╯
+
+# Custom commands can also have "subcommands" similar to Python or Golang:
+
+def "pow squared" [num] { $num ** 2 }
+def "pow cubed"   [num] { $num ** 3 }
+
+2
+| pow squared   # => 2 ** 2 = 4
+| pow cubed     # => 4 ** 3 = 64
+
+# Parameter definitions are just Nu lists, and can be separated by spaces,
+# newlines, or commas. Much like with optional values in structured data,
+# parameters can be specified as optional with a question mark postfix:
+
+def pow [num, power?] { $num ** ($power | default 2) }
+pow 4           # => 16
+pow 4 4         # => 256
+
+# Paramaters themselves are just Nu variable declarations that are bound at
+# runtime, and benefit from the same gradual typing as variables:
+
+def safe-pow [
+    num: int
+    power?: int
+] {
+    $num ** ($power | default 2)
+}
+
+safe-pow 2      # => 4
+safe-pow "2" 4
+# Error: nu::parser::parse_mismatch
+#
+#   × Parse mismatch during operation.
+#    ╭─[entry #10:1:10]
+#  1 │ safe-pow "2" 4
+#    ·          ─┬─
+#    ·           ╰── expected int
+#    ╰────
+
+# Custom commands can also define named flags, with an optional short flag name:
+def greet [name: string --age (-a): int] {
+    { 
+        name: $name
+        age: $age   # => even if called with -a, Nu will use the full name
+    }
+}
+
+# If a flag is defined without any type declarations, it is treated as a switch:
+
+def language [name --favorite] { { name: $name is_favorite: $favorite } }
+language nu     # => no flag defaults to false
+# ╭─────────────┬───────╮
+# │ name        │ nu    │
+# │ is_favorite │ false │
+# ╰─────────────┴───────╯
+language nu --favorite
+# ╭─────────────┬──────╮
+# │ name        │ nu   │
+# │ is_favorite │ true │
+# ╰─────────────┴──────╯
+
+# When dealing with lists, records, tables, or custom commands that have an
+# arbitrary number of arguments, the collection can be unpacked using the
+# spread (...) operator, referred to in Nu as the 'rest' operator.
+def multi-greet [...names: string] {
+  for $name in $names {
+    print $"Hello, ($name)!"
+  }
+}
+
+multi-greet Tom Dick Harry
+# => Hello, Tom!
+# => Hello, Dick!
+# => Hello, Harry!
+
+# For more information, see https://www.nushell.sh/book/custom_commands.html
+
+####################################################
+## Nu as a Language, Pt. 3: Iterables & Control Flow
+####################################################
+
+# As discussed before, Nu has commands for the holy trinity of functional
+# programming iterators - map ('each'), filter ('where'), and reduce ('reduce').
+# Closures and pipelines can also be thought of as control flow:
+1..                     # ranges can be unbounded - be careful!
+| each {|x| $x * 3 }
+| where $it mod 2 == 1  # $it is a special variable for where "row conditions"
+| first 10              # setting a bounds, otherwise reduce goes forever
+| reduce {|elt, acc| $elt + $acc}
+# => 300
+
+# Nu also has two options for conditional operators: 'if' and 'match'.
+# If statements work as you expect:
+
+let test = 10
+if $test mod 3 == 0 {
+    "this won't trigger"
+} else if $test < 5 {
+    "this also won't trigger"
+} else {
+    'finally, this triggers'
+}
+
+# Match statements are similar to switch statements or other pattern matches:
+match $test {
+    1 => 'nope',
+    5 => 'not this one',
+    'pie' => 'yes, you can do this',
+    _ => 'this is a catch-all, which other languages might call default'
+}
+
+# TODO: do try catch and skip/take while/until
+
+# While generally discouraged, Nu does support loops with 'for' and 'while'.
+# These can be helpful in situations where you need a mutable variable, or when
+# building custom errors as part of script or module development. For the sake
+# of not making this long documentation even longer, I will leave that information
+# as an exercise for the reader: https://www.nushell.sh/book/control_flow.html#loops
 ```
 
 For more information, read the [Nu Book](https://www.nushell.sh/book/) or join
-the [Discord community](https://discord.gg/NtAbbGn)
+the [Discord community](https://discord.gg/NtAbbGn).
